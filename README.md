@@ -2,12 +2,13 @@
 
 **Maschine Mikro MK2 for Ableton Live — no NI software required.**
 
-[![CI](https://github.com/OWNER/mikrobe/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/mikrobe/actions/workflows/ci.yml)
+[![CI](https://github.com/DIGITUI/mikrobe/actions/workflows/ci.yml/badge.svg)](https://github.com/DIGITUI/mikrobe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Mikrobe lets you use a **Native Instruments Maschine Mikro MK2** as an Ableton Live controller **without the Maschine software, Controller Editor or NI drivers**. Pads, buttons, encoder, RGB pads, button LEDs **and the 128×64 screen** all work.
 
-<p align="center"><img src="docs/images/screen-modes.png" width="560" alt="Screen in each mode"></p>
+<p align="center"><img src="docs/images/mikrobe-hardware.jpg" width="760" alt="Maschine Mikro MK2 running Mikrobe with Ableton Live: track name, tempo and position on the screen, pads lit in the track colour"></p>
+<p align="center"><sub>Mikrobe running on a Mikro MK2 with Ableton Live: TRACK mode, with the selected track, tempo and song position on the screen.</sub></p>
 
 ## Features
 
@@ -20,7 +21,7 @@ Mikrobe lets you use a **Native Instruments Maschine Mikro MK2** as an Ableton L
 - **One-step macOS installer.** The bridge runs in the background and starts at login.
 - **Platforms:** macOS (Apple Silicon and Intel) and Windows. Live 10.1.13, 11 and 12.
 
-> **Status: beta (v0.1.0).** The USB protocol comes from proven open-source drivers. The whole pipeline is covered by a simulation test, but hardware testing so far is limited. Bug reports and button-mapping reports are very welcome; see [Contributing](CONTRIBUTING.md).
+> **Status: beta (v0.1.0).** The USB protocol comes from proven open-source drivers. The whole pipeline is covered by a simulation test, and it runs on real hardware (photo above); testing across different machines and Live versions is still limited. Bug reports and button-mapping reports are very welcome; see [Contributing](CONTRIBUTING.md).
 
 ## How it works
 
@@ -102,6 +103,8 @@ Stop the background bridge first; on macOS the control script does this for you.
 ## Controls
 
 ### Screen
+<img src="docs/images/screen-modes.png" width="560" alt="The screen in each encoder mode">
+
 ```
 ┌──────────────────────────────┐
 │ VOLUME                    C1 │  encoder mode · pad mode (NOTE base note / CLIPS)
