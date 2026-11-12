@@ -1,0 +1,17 @@
+{
+  "pad_on_threshold": 400,
+  "pad_off_threshold": 250,
+  "pad_full_scale": 3000,
+  "velocity_curve": 0.7,
+  "velocity_attack_ms": 3,
+  "fixed_velocity": 0,
+  "aftertouch": "off",
+  "base_note": 36,
+  "encoder_invert": false,
+  "led_on": 127,
+  "led_dim": 10,
+  "pad_note_mode_dim": 0.12,
+  "display_invert": false,
+  "display_fps": 25,
+  "font_size": 11
+}

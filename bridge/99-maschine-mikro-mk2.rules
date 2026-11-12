@@ -1,0 +1,3 @@
+# Maschine Mikro MK2: allow non-root access (Linux)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="17cc", ATTRS{idProduct}=="1200", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="17cc", ATTRS{idProduct}=="1200", MODE="0666"

@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install test dependencies
+        run: pip install pillow mido
+      - name: Compile
+        run: python -m py_compile bridge/mikrobe.py ableton/Mikrobe/__init__.py ableton/Mikrobe/Mikrobe.py
+      - name: Check shell scripts
+        run: for f in scripts/macos/*.command bridge/*.command; do bash -n "$f"; done
+      - name: Simulation test
+        run: python tests/test_e2e.py
+        env:
+          MIKROBE_TEST_OUT: ${{ runner.temp }}/screens
+      - uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.12'
+        with:
+          name: screen-snapshots
+          path: ${{ runner.temp }}/screens
