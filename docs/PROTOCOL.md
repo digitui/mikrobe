@@ -63,6 +63,9 @@ SysEx from Live → bridge always starts `F0 7D 4D 4B <cmd>`:
 | `04` | 32 levels (0 off, 1 dim, 2 on), indexed by button bit | Button LEDs |
 | `05` | pad_mode(0 note, 1 clip) base_note | Pad mode |
 | `06` | r g b | Selected track colour (GROUP LED, NOTE-mode pads) |
+| `08` | note… | Notes currently playing on the selected track (sent every refresh, ~10/s, while any are playing). The bridge lights those pads for `playback_flash_ms`. |
 | `7E` | – | Heartbeat (~1/s). With no heartbeat for 3 s, the bridge shows "Waiting for Live". |
+
+Note on/off messages on **ch 1** arriving on the Feedback port also light the matching pads. This lets you route a MIDI track's output to the bridge for sample-accurate playback lights.
 
 The `BUTTON_BITS` tables in `bridge/mikrobe.py` and `ableton/Mikrobe/Mikrobe.py` must stay identical.

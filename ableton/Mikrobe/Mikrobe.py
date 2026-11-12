@@ -22,6 +22,7 @@ CC_BUTTON_BASE = 20
 
 SYSEX_HEAD = (0xF0, 0x7D, 0x4D, 0x4B)
 SX_LINE, SX_BAR, SX_PAD, SX_BUTTONS, SX_MODE, SX_GROUP = 1, 2, 3, 4, 5, 6
+SX_PLAYING = 8
 SX_HEARTBEAT, SX_HELLO = 0x7E, 0x7F
 
 BUTTON_BITS = {
@@ -95,6 +96,10 @@ class Mikrobe(ControlSurface):
         self._mk_cache = {}
         self._mk_highlight = None
         self._mk_last_track_off = 0
+        self._mk_notes_clip = None
+        self._mk_notes = []
+        self._mk_notes_tick = -100
+        self._mk_last_pos = None
         with self.component_guard():
             self._mk_setup_controls()
         self.show_message("Mikrobe ready")
@@ -527,6 +532,16 @@ class Mikrobe(ControlSurface):
         self._mk_send_cached("bar", [SX_BAR, bar[0], bar[1]])
         self._mk_send_cached("buttons", [SX_BUTTONS] + self._mk_button_levels())
 
+        if self._mk_pad_mode == PAD_NOTE:
+            try:
+                playing = self._mk_playing_notes(track)
+            except Exception as e:
+                playing = []
+                if self._mk_ticks % 100 == 0:
+                    self.log_message("Mikrobe: playback lights error: %s" % e)
+            if playing:
+                self._mk_send([SX_PLAYING] + playing)
+
         if self._mk_pad_mode == PAD_CLIP:
             for n in range(16):
                 self._mk_send_cached("pad%d" % n, [SX_PAD, n] + self._mk_pad_state(n))
@@ -537,6 +552,75 @@ class Mikrobe(ControlSurface):
                     self._c_instance.set_session_highlight(offsets[0], offsets[1], 4, 4, False)
                 except Exception:
                     pass
+
+    # ------------------------------------------------------------------ playback lights
+
+    def _mk_playing_clip(self, track):
+        """Return (clip, position in clip beats) for the MIDI clip playing on track, or (None, None)."""
+        s = self.song()
+        if not s.is_playing:
+            return None, None
+        idx = getattr(track, "playing_slot_index", -1)
+        if idx is not None and idx >= 0:
+            slots = list(track.clip_slots)
+            if idx < len(slots) and slots[idx].has_clip:
+                clip = slots[idx].clip
+                if clip.is_midi_clip and clip.is_playing:
+                    return clip, clip.playing_position
+        t = s.current_song_time
+        for clip in getattr(track, "arrangement_clips", []):
+            if clip.is_midi_clip and clip.start_time <= t < clip.end_time:
+                pos = clip.start_marker + (t - clip.start_time)
+                if clip.looping and clip.loop_end > clip.loop_start and pos >= clip.loop_end:
+                    span = clip.loop_end - clip.loop_start
+                    pos = clip.loop_start + ((pos - clip.loop_start) % span)
+                return clip, pos
+        return None, None
+
+    def _mk_clip_notes(self, clip):
+        """All unmuted notes of a clip as (pitch, start, duration); re-read every ~1 s to catch edits."""
+        if clip != self._mk_notes_clip or self._mk_ticks - self._mk_notes_tick >= 10:
+            lo = min(0.0, clip.loop_start, clip.start_marker)
+            span = max(clip.loop_end, clip.end_marker) - lo + 1.0
+            try:
+                notes = [(n.pitch, n.start_time, n.duration)
+                         for n in clip.get_notes_extended(0, 128, lo, span) if not n.mute]
+            except AttributeError:          # Live 10
+                notes = [(n[0], n[1], n[2]) for n in clip.get_notes(lo, 0, span, 128) if not n[4]]
+            if clip != self._mk_notes_clip:
+                self._mk_last_pos = None
+            self._mk_notes_clip, self._mk_notes, self._mk_notes_tick = clip, notes, self._mk_ticks
+        return self._mk_notes
+
+    def _mk_playing_notes(self, track):
+        """Notes sounding now, plus short notes that started since the last refresh (so drum hits
+        shorter than the ~100 ms refresh still flash). Only notes that land on the pads are sent."""
+        clip, pos = self._mk_playing_clip(track)
+        if clip is None:
+            self._mk_last_pos = None
+            return []
+        notes = self._mk_clip_notes(clip)
+        last = self._mk_last_pos
+        self._mk_last_pos = pos
+        windows = []
+        if last is not None:
+            if last <= pos < last + 2.0:
+                windows = [(last, pos)]
+            elif pos < last:                                  # looped around
+                windows = [(last, max(last, clip.loop_end)), (clip.loop_start - 1e-6, pos)]
+        lo, hi = self._mk_base_note, self._mk_base_note + 15
+        active = set()
+        for pitch, start, dur in notes:
+            if pitch < lo or pitch > hi:
+                continue
+            if start <= pos < start + dur:
+                active.add(pitch)
+                continue
+            for a, b in windows:
+                if a < start <= b:
+                    active.add(pitch)
+                    break
+        return sorted(active)
 
     def _mk_screen(self):
         s = self.song()

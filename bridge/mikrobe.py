@@ -37,7 +37,7 @@ import time
 # Hardware constants
 # --------------------------------------------------------------------------
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 VENDOR_ID = 0x17CC          # Native Instruments
 PRODUCT_ID = 0x1200         # Maschine Mikro MK2
@@ -96,6 +96,7 @@ SX_PAD = 0x03        # pad(0-15, 0=bottom-left) r g b anim(0 static,1 blink,2 pu
 SX_BUTTONS = 0x04    # 32 bytes, indexed by button bit: 0 off, 1 dim, 2 on
 SX_MODE = 0x05       # pad_mode(0 note,1 clip) base_note
 SX_GROUP = 0x06      # r g b  (selected track colour, 0-127)
+SX_PLAYING = 0x08    # note... : notes currently sounding on the selected track (sent ~10x/s)
 SX_HEARTBEAT = 0x7E  # script -> bridge, ~1/s
 SX_HELLO = 0x7F      # bridge -> script: "please resend everything"
 
@@ -116,6 +117,7 @@ DEFAULT_CONFIG = {
     "led_on": 127,
     "led_dim": 10,
     "pad_note_mode_dim": 0.12,    # unlit pad brightness in NOTE mode (fraction of track colour)
+    "playback_flash_ms": 150,     # how long a pad stays lit after Live reports a playing note
     "display_invert": False,
     "display_fps": 25,
     "font_size": 11,
@@ -148,6 +150,13 @@ def hw_to_padnum(hw):
 def padnum_to_hw(n):
     row_from_bottom, col = divmod(n, 4)
     return (3 - row_from_bottom) * 4 + col
+
+
+def full_bright(rgb, whiten=0.0):
+    """Scale a colour so its brightest channel is 127, optionally blending toward white."""
+    m = max(rgb) or 1
+    out = [c * 127.0 / m for c in rgb]
+    return tuple(int(c + (127 - c) * whiten) for c in out)
 
 
 NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -359,6 +368,8 @@ class Bridge(object):
         self.session_pads = [((0, 0, 0), 0)] * 16
         self.last_heartbeat = 0.0
         self.live_lines = None
+        self.playing_until = {}       # note -> time until which its pad stays lit (playback)
+        self.playing_held = set()     # notes held on via MIDI note-on from a routed track
 
         self._last_leds = None
         self._last_frame = None
@@ -411,6 +422,15 @@ class Bridge(object):
     # ---------------- MIDI from Live ----------------
 
     def on_midi(self, msg):
+        if msg.type in ("note_on", "note_off"):
+            # optional: a MIDI track routed to the Feedback port (sample-accurate playback lights)
+            with self.lock:
+                if msg.type == "note_on" and msg.velocity > 0:
+                    self.playing_held.add(msg.note)
+                    self.playing_until[msg.note] = time.time() + self.cfg["playback_flash_ms"] / 1000.0
+                else:
+                    self.playing_held.discard(msg.note)
+            return
         if msg.type != "sysex":
             return
         d = list(msg.data)
@@ -437,6 +457,10 @@ class Bridge(object):
                 self.pad_mode, self.base_note = p[0], p[1]
             elif cmd == SX_GROUP and len(p) >= 3:
                 self.group_rgb = (p[0], p[1], p[2])
+            elif cmd == SX_PLAYING:
+                until = time.time() + self.cfg["playback_flash_ms"] / 1000.0
+                for note in p:
+                    self.playing_until[note] = until
 
     # ---------------- HID input ----------------
 
@@ -590,8 +614,12 @@ class Bridge(object):
             held = self.pads[hw].state != IDLE
             if self.pad_mode == 0 or not connected:
                 base = (gr, gg, gb) if any((gr, gg, gb)) else (60, 60, 60)
+                note = self.base_note + n
+                playing = note in self.playing_held or self.playing_until.get(note, 0) > now
                 if held:
-                    rgb = base
+                    rgb = full_bright(base, whiten=0.35)
+                elif playing:
+                    rgb = full_bright(base)
                 else:
                     k = cfg["pad_note_mode_dim"]
                     rgb = tuple(int(c * k) for c in base)

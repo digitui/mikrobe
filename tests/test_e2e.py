@@ -33,10 +33,21 @@ class Param:
         if self.name == "Track Panning": return "C" if abs(v) < 0.01 else ("%dL" % (-v*50) if v < 0 else "%dR" % (v*50))
         return "%.2f" % v
 
+class Note:
+    def __init__(self, pitch, start, dur): self.pitch, self.start_time, self.duration, self.mute = pitch, start, dur, False
+
 class Clip:
-    def __init__(self, name, color, playing=False):
+    def __init__(self, name, color, playing=False, notes=()):
         self.name, self.color, self.is_playing = name, color, playing
         self.is_triggered = self.is_recording = False
+        self.is_midi_clip, self.looping = True, True
+        self.loop_start = self.start_marker = 0.0
+        self.loop_end = self.end_marker = 4.0
+        self.playing_position = 0.0
+        self.notes = [Note(*n) for n in notes]
+    def get_notes_extended(self, from_pitch, pitch_span, from_time, time_span):
+        return [n for n in self.notes if from_pitch <= n.pitch < from_pitch + pitch_span
+                and from_time <= n.start_time < from_time + time_span]
 
 class Slot:
     def __init__(self, clip=None): self.clip, self.is_triggered, self.fired = clip, False, 0
@@ -58,6 +69,7 @@ class Track:
         self.clip_slots = [Slot() for _ in range(n_scenes)]
         self.devices = [Device("Operator"), Device("Auto Filter")]
         self.view = types.SimpleNamespace(selected_device=None)
+        self.playing_slot_index = -1
     def stop_all_clips(self): pass
     def duplicate_clip_slot(self, i): pass
 
@@ -68,7 +80,9 @@ class Scene:
 class Song:
     def __init__(self):
         self.visible_tracks = [Track("808 Drums", 0xFF3A3A), Track("Bass", 0x3A9BFF), Track("Keys", 0x55FF55), Track("Vox", 0xFFD000)]
-        self.visible_tracks[0].clip_slots[0] = Slot(Clip("Beat A", 0xFF3A3A, playing=True))
+        self.visible_tracks[0].clip_slots[0] = Slot(Clip("Beat A", 0xFF3A3A, playing=True,
+            notes=[(36, b, 0.05) for b in range(4)] + [(42, b + 0.5, 0.05) for b in range(4)] + [(48, 0.0, 2.0)]))
+        self.visible_tracks[0].playing_slot_index = 0
         self.visible_tracks[1].clip_slots[0] = Slot(Clip("Bassline", 0x3A9BFF))
         self.visible_tracks[2].clip_slots[1] = Slot(Clip("Chords", 0x55FF55))
         self.return_tracks = []
@@ -258,6 +272,37 @@ print("play LED:", leds[mb.BUTTON_LED["play"]], " f1 LED:", leds[mb.BUTTON_LED["
 press("nav"); turn(2); pump_script()
 print("tempo:", SONG.tempo); assert SONG.tempo == 126.0
 snapshot(OUT + "/6_tempo.png")
+
+# ---------------- playback lighting in NOTE mode
+press("pad_mode"); pump_script(); assert br.pad_mode == 0
+press("arrow_left"); pump_script()            # make sure "808 Drums" (with the playing clip) is selected
+assert SONG.view.selected_track.name == "808 Drums", SONG.view.selected_track.name
+clip = SONG.visible_tracks[0].clip_slots[0].clip
+def pad_rgb(note):
+    hw = mb.padnum_to_hw(note - br.base_note)
+    br.flush_output(time.time())
+    return br.dev.leds[mb.LED_PADS_RGB + 3 * hw: mb.LED_PADS_RGB + 3 * hw + 3]
+br.playing_until.clear()
+clip.playing_position = 0.3; pump_script()     # first refresh: no previous position
+clip.playing_position = 0.6; pump_script()     # crossed the hat at 0.5 (only 0.05 beats long)
+hat, kick, pad48 = pad_rgb(42), pad_rgb(36), pad_rgb(48)
+print("hat (short hit crossed):", hat, " long note 48:", pad48, " kick (not playing):", kick)
+assert max(hat) == 127 and max(pad48) == 127, "playing notes should light at full brightness"
+assert max(kick) < 40, "kick isn't sounding at 0.6 so it should stay dim"
+br.playing_until.clear()
+clip.playing_position = 3.9; pump_script()
+clip.playing_position = 0.02; pump_script()    # looped around: kick at 0.0 must flash
+assert max(pad_rgb(36)) == 127, "kick at loop start should flash after wrap-around"
+# notes routed from a MIDI track to the Feedback port also light pads
+br.playing_until.clear(); br.on_midi(mido.Message("note_on", note=40, velocity=100))
+assert max(pad_rgb(40)) == 127
+br.on_midi(mido.Message("note_off", note=40)); br.playing_until.clear()
+assert max(pad_rgb(40)) < 40
+# stopped transport -> no playback lights
+SONG.is_playing = False; br.playing_until.clear(); pump_script()
+assert max(pad_rgb(48)) < 40
+SONG.is_playing = True
+print("playback lighting OK")
 
 # display report framing check
 class CapDev(mb.MikroDevice):

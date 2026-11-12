@@ -13,6 +13,7 @@ Mikrobe lets you use a **Native Instruments Maschine Mikro MK2** as an Ableton L
 ## Features
 
 - **Velocity-sensitive pads.** Pad 1 starts at C1, which matches a Drum Rack. Optional poly or channel aftertouch.
+- **Playback lights.** While a MIDI clip plays on the selected track (in Session or Arrangement view), the pads for the notes it plays light up in time.
 - **Clip launching.** A 4×4 grid with clip colours that follows the selected track and scene. Live shows a coloured box around the grid. Queued clips flash; recording clips pulse.
 - **Screen.** Shows the encoder mode, track or device name, the parameter name and value with a value bar, tempo, song position and play/record state, plus short popup messages.
 - **Encoder modes.** Volume, pan, sends, device parameters, tempo and track scrolling. Hold SHIFT for fine adjustment.
@@ -127,7 +128,7 @@ Stop the background bridge first; on macOS the control script does this for you.
 
 ### Pads
 **PAD MODE** switches between two modes:
-- **NOTES:** the pads play the selected or armed track. SHIFT + transport ◀ ▶ shifts the pads by 16 notes; SHIFT + PAD MODE resets them to C1.
+- **NOTES:** the pads play the selected or armed track. Pads glow dimly in the track colour, light up fully while a clip plays their note, and turn brighter still when you hit them. SHIFT + transport ◀ ▶ shifts the pads by 16 notes; SHIFT + PAD MODE resets them to C1.
 - **CLIPS:** a 4×4 launch grid with the top row as the first scene. SHIFT + pad selects a slot without launching it.
 
 ### Buttons
@@ -166,9 +167,18 @@ Edit `bridge/config.json`. The macOS installer copies it to `~/Library/Applicati
 | `fixed_velocity` | 0 | Set to 1–127 to give every hit the same velocity. |
 | `aftertouch` | `"off"` | `"poly"` or `"channel"`. |
 | `encoder_invert` | false | Flips the encoder direction. |
+| `playback_flash_ms` | 150 | How long a pad stays lit for each playing note. |
 | `led_on` / `led_dim` | 127 / 10 | Button LED brightness. |
 | `display_invert` | false | Swaps black and white on the screen. |
 | `font_size` | 11 | Screen font size. |
+
+### Tighter playback lights (optional)
+Out of the box, Live refreshes the playing notes about 10 times a second. That's fine for watching a beat, but the lights can lag the audio by up to about 0.1 s. For exact timing:
+1. Create a new MIDI track and set **MIDI From** to your drum or instrument track, with **Post FX** selected.
+2. Set **MIDI To** to **Mikrobe Feedback**, channel 1, and set its monitor to **In**.
+3. In Settings → MIDI, turn on **Track** for the `Mikrobe Feedback` output.
+
+The pads then light from the actual MIDI notes as they play.
 
 ## Troubleshooting
 
