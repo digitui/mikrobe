@@ -32,6 +32,17 @@ if [ -z "$PY" ]; then
 fi
 echo "Using $PY ($("$PY" --version))"
 
+# ---------------------------------------------------------------- remove pre-rename install
+OLD_PLIST="$HOME/Library/LaunchAgents/com.mikromk2.bridge.plist"
+if [ -f "$OLD_PLIST" ] || [ -d "$HOME/Library/Application Support/MikroMK2Bridge" ]; then
+  say "Removing the old 'MikroMK2' version (it would block the controller)"
+  launchctl bootout "gui/$(id -u)" "$OLD_PLIST" 2>/dev/null || true
+  rm -f "$OLD_PLIST"
+  rm -rf "$HOME/Library/Application Support/MikroMK2Bridge"
+  echo "Old background bridge removed."
+fi
+pkill -f "MikroMK2Bridge/mikro_bridge.py" 2>/dev/null || true
+
 # ---------------------------------------------------------------- bridge files + venv
 say "Installing the bridge to: $APP_DIR"
 mkdir -p "$APP_DIR"
@@ -53,7 +64,7 @@ if [ ! -d "$HOME/Music/Ableton/User Library" ]; then
   [ -n "$CUSTOM" ] && SCRIPTS_DIR="$CUSTOM/Remote Scripts"
 fi
 mkdir -p "$SCRIPTS_DIR"
-rm -rf "$SCRIPTS_DIR/Mikrobe"
+rm -rf "$SCRIPTS_DIR/Mikrobe" "$SCRIPTS_DIR/MikroMK2"   # MikroMK2 = old name
 cp -R "$HERE/ableton/Mikrobe" "$SCRIPTS_DIR/Mikrobe"
 echo "Copied to: $SCRIPTS_DIR/Mikrobe"
 
