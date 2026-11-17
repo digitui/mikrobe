@@ -5,6 +5,9 @@
 [![CI](https://github.com/DIGITUI/mikrobe/actions/workflows/ci.yml/badge.svg)](https://github.com/DIGITUI/mikrobe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-support-orange)](https://buymeacoffee.com/digitui)
+
+
 Mikrobe lets you use a **Native Instruments Maschine Mikro MK2** as an Ableton Live controller **without the Maschine software, Controller Editor or NI drivers**. Pads, buttons, encoder, RGB pads, button LEDs **and the 128×64 screen** all work.
 
 <p align="center"><img src="docs/images/mikrobe-hardware.jpg" width="760" alt="Maschine Mikro MK2 running Mikrobe with Ableton Live: track name, tempo and position on the screen, pads lit in the track colour"></p>
