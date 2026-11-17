@@ -196,6 +196,11 @@ python tests/test_e2e.py
 ```
 The test simulates the controller's USB messages and Ableton's API, then runs the real bridge and the real script against each other. It checks the MIDI routing, LED and pad colours, and the screen byte format, and it saves PNG snapshots of the screen. It needs no hardware and no copy of Live. CI runs it on every push.
 
+## Support
+If this allowed you to use your Mikro on its own, you can [buy me a coffee](https://buymeacoffee.com/digitui). Thank you!
+
+
+
 ## Credits
 
 The HID protocol (button bits, LED order, pad report, display page format) comes from the reverse-engineering work of **[timsavage/maschine-rs](https://github.com/timsavage/maschine-rs)** (MIT) and **Ardour's Maschine2 control surface** by Robin Gareus. No code from Native Instruments is used.
