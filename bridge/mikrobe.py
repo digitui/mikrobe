@@ -404,19 +404,32 @@ class Splash(object):
         top = d.textbbox((0, 0), text, font=f, stroke_width=stroke)[1]
         d.text((xy[0], xy[1] - top), text, font=f, fill=1, stroke_width=stroke, stroke_fill=1)
 
-    def _microbe(self, d, cx, cy, t):
-        """A little wobbling microbe: oval body, two dots, waving cilia."""
-        import math
-        rx, ry = 6, 4
-        wob = math.sin(t * 9) * 0.8
-        d.ellipse((cx - rx - wob, cy - ry + wob, cx + rx + wob, cy + ry - wob), outline=1, fill=0)
-        d.point((cx - 2, cy - 1), fill=1)
-        d.point((cx + 2, cy + 1), fill=1)
-        for i in range(8):
-            a = i * math.pi / 4 + math.sin(t * 6 + i) * 0.25
-            x0, y0 = cx + math.cos(a) * (rx + 1), cy + math.sin(a) * (ry + 1)
-            x1, y1 = cx + math.cos(a) * (rx + 3), cy + math.sin(a) * (ry + 3)
-            d.line((x0, y0, x1, y1), fill=1)
+    # icon pads: 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right
+    PRESS_START = 3.6          # when the icon starts "playing"
+    PRESS_STEP = 0.2           # seconds per step
+    PRESS_PATTERN = (2, None, 1, 2, 3, None, 0, 1)   # a little beat; None = rest
+
+    def pressed_pad(self, t):
+        """Which icon pad (0-3) is held down at time t, or None."""
+        if t < self.PRESS_START:
+            return None
+        step, frac = divmod((t - self.PRESS_START) / self.PRESS_STEP, 1.0)
+        if frac > 0.6:                         # released for the last part of each step
+            return None
+        return self.PRESS_PATTERN[int(step) % len(self.PRESS_PATTERN)]
+
+    def _pads_icon(self, d, cx, cy, t):
+        """A 2x2 pad grid (12x12 px). The pressed pad fills in and sinks by a pixel."""
+        held = self.pressed_pad(t)
+        size, gap = 5, 2
+        x0, y0 = cx - (2 * size + gap) // 2, cy - (2 * size + gap) // 2
+        for q in range(4):
+            r, c = divmod(q, 2)
+            x, y = x0 + c * (size + gap), y0 + r * (size + gap)
+            if q == held:
+                d.rectangle((x + 1, y + 1, x + size - 1, y + size), fill=1)     # pressed: filled, sunk 1 px
+            else:
+                d.rectangle((x, y, x + size - 1, y + size - 1), outline=1, fill=0)
 
     @staticmethod
     def _dither(img, amount, invert=False):
@@ -462,16 +475,16 @@ class Splash(object):
             uy = big_y + self.h_big + 4
             d.line((DISPLAY_W // 2 - half, uy, DISPLAY_W // 2 + half, uy), fill=1)
 
-        # --- phase 6 (3.0-3.7 s): tagline types out, microbe swims in
+        # --- phase 6 (3.0-3.6 s): tagline types out, pad icon slides in, then starts "playing"
         if t >= 3.0:
             n = int(len(self.TAGLINE) * _seg(t, 3.0, 3.55))
             tag = self.TAGLINE[:n]
-            group = self.w_tag + 6 + 18                 # tagline + gap + microbe (with cilia)
+            group = self.w_tag + 6 + 12                 # tagline + gap + pad icon
             tx = (DISPLAY_W - group) // 2
             self._text(d, (tx, 52), tag, self.f_tag)
-            home = tx + self.w_tag + 6 + 9                # microbe centre when it settles
-            mx = int(DISPLAY_W + 12 - (DISPLAY_W + 12 - home) * _ease_out(_seg(t, 3.1, 3.7)))
-            self._microbe(d, mx, 56, t)
+            home = tx + self.w_tag + 6 + 6                # icon centre when it settles
+            ix = int(DISPLAY_W + 10 - (DISPLAY_W + 10 - home) * _ease_out(_seg(t, 3.1, 3.6)))
+            self._pads_icon(d, ix, 56, t)
 
         # quick invert flash when BE lands
         if 2.75 <= t < 2.83:
@@ -499,8 +512,12 @@ class Splash(object):
         if t < 3.2:                                      # all flash white when BE lands, then decay
             k = 1 - _seg(t, 2.75, 3.2)
             return (int(127 * k), int(127 * k), int(127 * k))
-        k = max(0.0, 1 - _seg(t, 3.2, self.DURATION)) * (0.5 + 0.5 * math.sin(t * 8 - dist * 2))
-        return (int(20 * k), int(110 * k), int(60 * k))   # green "alive" shimmer
+        fade = 1 - _seg(t, self.DURATION - 0.4, self.DURATION)
+        held = self.pressed_pad(t)
+        if held is not None and row // 2 == held // 2 and col // 2 == held % 2:
+            return (int(90 * fade), int(127 * fade), int(110 * fade))   # matching corner "hit"
+        k = fade * min(1.0, _seg(t, 3.2, 3.6) + 0.15)
+        return (0, int(28 * k), int(16 * k))                            # soft green base
 
 
 # --------------------------------------------------------------------------
