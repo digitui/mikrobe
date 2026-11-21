@@ -13,6 +13,7 @@ Mikrobe lets you use a **Native Instruments Maschine Mikro MK2** as an Ableton L
 ## Features
 
 - **Velocity-sensitive pads.** Pad 1 starts at C1, which matches a Drum Rack. Optional poly or channel aftertouch.
+- **Boot animation.** When the Mikro connects, the screen plays a short animation in which MIKRO turns into MIKROBE, and the pads ripple along with it.
 - **Playback lights.** While a MIDI clip plays on the selected track (in Session or Arrangement view), the pads for the notes it plays light up in time.
 - **Clip launching.** A 4×4 grid with clip colours that follows the selected track and scene. Live shows a coloured box around the grid. Queued clips flash; recording clips pulse.
 - **Screen.** Shows the encoder mode, track or device name, the parameter name and value with a value bar, tempo, song position and play/record state, plus short popup messages.
@@ -95,6 +96,7 @@ python3 bridge/mikrobe.py --list            # is the Mikro visible? (17cc:1200)
 python3 bridge/mikrobe.py --monitor         # prints every pad/button/encoder event
 python3 bridge/mikrobe.py --test display    # screen test pattern
 python3 bridge/mikrobe.py --test leds       # lights every LED in turn
+python3 bridge/mikrobe.py --test splash     # loops the boot animation
 ```
 
 Stop the background bridge first; on macOS the control script does this for you. If a button name printed by `--monitor` doesn't match the label on your device, please [open a mapping report](../../issues/new?template=button_mapping.md).
@@ -102,6 +104,9 @@ Stop the background bridge first; on macOS the control script does this for you.
 ---
 
 ## Controls
+
+### Boot animation
+<img src="docs/images/mikrobe-boot.gif" width="420" alt="Mikrobe boot animation: MASCHINE MIKRO MK2 turns into MIKROBE, with the pads rippling">
 
 ### Screen
 <img src="docs/images/screen-modes.png" width="560" alt="The screen in each encoder mode">
@@ -171,6 +176,7 @@ Edit `bridge/config.json`. The macOS installer copies it to `~/Library/Applicati
 | `led_on` / `led_dim` | 127 / 10 | Button LED brightness. |
 | `display_invert` | false | Swaps black and white on the screen. |
 | `font_size` | 11 | Screen font size. |
+| `splash` | true | Plays the boot animation when the Mikro connects. Set to `false` to skip it. |
 
 ### Tighter playback lights (optional)
 Out of the box, Live refreshes the playing notes about 10 times a second. That's fine for watching a beat, but the lights can lag the audio by up to about 0.1 s. For exact timing:

@@ -304,6 +304,20 @@ assert max(pad_rgb(48)) < 40
 SONG.is_playing = True
 print("playback lighting OK")
 
+# ---------------- boot animation takes over screen + pads, then hands back
+now = time.time()
+br._last_display_t = 0; br.flush_output(now); normal_frame = bytes(br.dev.display)
+br.splash_start = now
+for t in (0.3, 1.0, 2.4, 3.6):
+    br._last_display_t = 0; br.flush_output(now + t)
+    assert bytes(br.dev.display) != normal_frame, "splash should be on screen at t=%.1f" % t
+br._last_display_t = 0; br.flush_output(now + 2.9)
+assert max(br.dev.leds[mb.LED_PADS_RGB:]) > 60, "pads should flash during the splash"
+br.last_heartbeat = now + mb.Splash.DURATION        # Live is still sending heartbeats
+br._last_display_t = 0; br.flush_output(now + mb.Splash.DURATION + 0.1)
+assert br.splash_start is None and bytes(br.dev.display) == normal_frame, "splash should hand back to the Live screen"
+print("boot animation OK")
+
 # display report framing check
 class CapDev(mb.MikroDevice):
     def __init__(self): self.writes = []

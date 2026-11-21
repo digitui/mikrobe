@@ -37,7 +37,7 @@ import time
 # Hardware constants
 # --------------------------------------------------------------------------
 
-__version__ = "0.1.1"
+__version__ = "0.1.3"
 
 VENDOR_ID = 0x17CC          # Native Instruments
 PRODUCT_ID = 0x1200         # Maschine Mikro MK2
@@ -121,6 +121,7 @@ DEFAULT_CONFIG = {
     "display_invert": False,
     "display_fps": 25,
     "font_size": 11,
+    "splash": True,               # boot animation on the screen + pads when the Mikro connects
 }
 
 
@@ -323,6 +324,185 @@ class Screen(object):
         return self.image_to_pages(self.render_image(), self.invert)
 
 
+
+# --------------------------------------------------------------------------
+# Boot animation: "MASCHINE / MIKRO / MK2"  ->  "MIKRO" + "BE" = "MIKROBE"
+# --------------------------------------------------------------------------
+
+BAYER4 = ((0, 8, 2, 10), (12, 4, 14, 6), (3, 11, 1, 9), (15, 7, 13, 5))
+
+
+def _ease_out(x):
+    x = max(0.0, min(1.0, x))
+    return 1 - (1 - x) ** 3
+
+
+def _ease_in(x):
+    x = max(0.0, min(1.0, x))
+    return x ** 3
+
+
+def _bounce(x):
+    """Drop with two small bounces (0 -> 1)."""
+    x = max(0.0, min(1.0, x))
+    n, d = 7.5625, 2.75
+    if x < 1 / d:
+        return n * x * x
+    if x < 2 / d:
+        x -= 1.5 / d
+        return n * x * x + 0.75
+    if x < 2.5 / d:
+        x -= 2.25 / d
+        return n * x * x + 0.9375
+    x -= 2.625 / d
+    return n * x * x + 0.984375
+
+
+def _seg(t, a, b):
+    """Progress 0..1 of t through the time segment [a, b]."""
+    return max(0.0, min(1.0, (t - a) / float(b - a)))
+
+
+class Splash(object):
+    """1-bit boot animation for the 128x64 screen, plus a matching pad light show."""
+
+    DURATION = 6.2                  # ~2.5 s hold on the finished MIKROBE screen before fading out
+    TAGLINE = "for Ableton Live"
+
+    def __init__(self):
+        from PIL import Image, ImageDraw, ImageFont
+        self._Image, self._ImageDraw = Image, ImageDraw
+
+        def font(size):
+            try:
+                return ImageFont.load_default(size=size)
+            except TypeError:                      # Pillow < 10.1: single small bitmap font
+                return ImageFont.load_default()
+
+        self.f_big, self.f_small, self.f_tag = font(25), font(11), font(10)
+        probe = ImageDraw.Draw(Image.new("1", (1, 1)))
+        self.w_mikro = self._w(probe, "MIKRO", self.f_big, 1)
+        self.w_be = self._w(probe, "BE", self.f_big, 1)
+        self.w_maschine = self._w(probe, "MASCHINE", self.f_small, 0)
+        self.w_mk2 = self._w(probe, "MK2", self.f_small, 0)
+        self.w_tag = self._w(probe, self.TAGLINE, self.f_tag, 0)
+        self.h_big = self._h(probe, "MIKROBE", self.f_big, 1)
+
+    @staticmethod
+    def _w(d, text, f, stroke):
+        box = d.textbbox((0, 0), text, font=f, stroke_width=stroke)
+        return box[2] - box[0]
+
+    @staticmethod
+    def _h(d, text, f, stroke):
+        box = d.textbbox((0, 0), text, font=f, stroke_width=stroke)
+        return box[3] - box[1]
+
+    @staticmethod
+    def _text(d, xy, text, f, stroke=0):
+        # textbbox has a font-dependent top offset; draw so the visible top lands at xy[1]
+        top = d.textbbox((0, 0), text, font=f, stroke_width=stroke)[1]
+        d.text((xy[0], xy[1] - top), text, font=f, fill=1, stroke_width=stroke, stroke_fill=1)
+
+    def _microbe(self, d, cx, cy, t):
+        """A little wobbling microbe: oval body, two dots, waving cilia."""
+        import math
+        rx, ry = 6, 4
+        wob = math.sin(t * 9) * 0.8
+        d.ellipse((cx - rx - wob, cy - ry + wob, cx + rx + wob, cy + ry - wob), outline=1, fill=0)
+        d.point((cx - 2, cy - 1), fill=1)
+        d.point((cx + 2, cy + 1), fill=1)
+        for i in range(8):
+            a = i * math.pi / 4 + math.sin(t * 6 + i) * 0.25
+            x0, y0 = cx + math.cos(a) * (rx + 1), cy + math.sin(a) * (ry + 1)
+            x1, y1 = cx + math.cos(a) * (rx + 3), cy + math.sin(a) * (ry + 3)
+            d.line((x0, y0, x1, y1), fill=1)
+
+    @staticmethod
+    def _dither(img, amount, invert=False):
+        """Ordered-dither reveal: amount 0 = blank, 1 = full image."""
+        if amount >= 1.0:
+            return img
+        px = img.load()
+        lvl = amount * 16
+        for y in range(img.height):
+            row = BAYER4[y & 3]
+            for x in range(img.width):
+                if px[x, y] and row[x & 3] >= lvl:
+                    px[x, y] = 0
+        return img
+
+    def image(self, t):
+        img = self._Image.new("1", (DISPLAY_W, DISPLAY_H), 0)
+        d = self._ImageDraw.Draw(img)
+        big_y = (DISPLAY_H - self.h_big) // 2 - 4
+
+        # --- phase 1 (0.0-1.3 s): device splash, dithers in
+        # --- phase 2 (1.3-1.8 s): MASCHINE flies up, MK2 drops away
+        out = _ease_in(_seg(t, 1.3, 1.8))
+        if out < 1.0:
+            self._text(d, ((DISPLAY_W - self.w_maschine) // 2, int(4 - 22 * out)), "MASCHINE", self.f_small)
+            self._text(d, ((DISPLAY_W - self.w_mk2) // 2, int(49 + 22 * out)), "MK2", self.f_small)
+
+        # --- phase 3 (1.7-2.2 s): MIKRO slides left to make room
+        total = self.w_mikro + self.w_be
+        x_start = (DISPLAY_W - self.w_mikro) // 2
+        x_end = (DISPLAY_W - total) // 2
+        x_mikro = int(x_start + (x_end - x_start) * _ease_out(_seg(t, 1.7, 2.2)))
+        self._text(d, (x_mikro, big_y), "MIKRO", self.f_big, 1)
+
+        # --- phase 4 (2.0-2.75 s): BE drops in from above with a bounce
+        if t >= 2.0:
+            y_be = int(-self.h_big - 4 + (big_y + self.h_big + 4) * _bounce(_seg(t, 2.0, 2.75)))
+            self._text(d, (x_mikro + self.w_mikro, y_be), "BE", self.f_big, 1)
+
+        # --- phase 5 (2.75-3.1 s): underline grows from the centre, flash
+        if t >= 2.75:
+            half = int((total // 2 + 2) * _ease_out(_seg(t, 2.75, 3.1)))
+            uy = big_y + self.h_big + 4
+            d.line((DISPLAY_W // 2 - half, uy, DISPLAY_W // 2 + half, uy), fill=1)
+
+        # --- phase 6 (3.0-3.7 s): tagline types out, microbe swims in
+        if t >= 3.0:
+            n = int(len(self.TAGLINE) * _seg(t, 3.0, 3.55))
+            tag = self.TAGLINE[:n]
+            group = self.w_tag + 6 + 18                 # tagline + gap + microbe (with cilia)
+            tx = (DISPLAY_W - group) // 2
+            self._text(d, (tx, 52), tag, self.f_tag)
+            home = tx + self.w_tag + 6 + 9                # microbe centre when it settles
+            mx = int(DISPLAY_W + 12 - (DISPLAY_W + 12 - home) * _ease_out(_seg(t, 3.1, 3.7)))
+            self._microbe(d, mx, 56, t)
+
+        # quick invert flash when BE lands
+        if 2.75 <= t < 2.83:
+            from PIL import ImageChops
+            img = ImageChops.invert(img.convert("L")).convert("1")
+
+        # fade in at the start, fade out at the end (ordered dither)
+        if t < 0.6:
+            img = self._dither(img, _seg(t, 0.0, 0.6))
+        elif t > self.DURATION - 0.4:
+            img = self._dither(img, 1.0 - _seg(t, self.DURATION - 0.4, self.DURATION))
+        return img
+
+    def pad_rgb(self, t, hw):
+        """Pad light show: a ripple from the centre during the splash, then a sweep as BE lands."""
+        import math
+        row, col = divmod(hw, 4)
+        dist = math.hypot(row - 1.5, col - 1.5)
+        if t < 1.8:                                      # slow breathing ripple, cyan
+            k = max(0.0, math.sin(t * 7 - dist * 2.2)) * min(1.0, t / 0.6)
+            return (0, int(60 * k), int(110 * k))
+        if t < 2.75:                                     # sweep left -> right, follows MIKRO/BE
+            k = max(0.0, 1 - abs(col - (t - 1.8) / 0.95 * 5 + 0.5))
+            return (int(40 * k), int(90 * k), int(127 * k))
+        if t < 3.2:                                      # all flash white when BE lands, then decay
+            k = 1 - _seg(t, 2.75, 3.2)
+            return (int(127 * k), int(127 * k), int(127 * k))
+        k = max(0.0, 1 - _seg(t, 3.2, self.DURATION)) * (0.5 + 0.5 * math.sin(t * 8 - dist * 2))
+        return (int(20 * k), int(110 * k), int(60 * k))   # green "alive" shimmer
+
+
 # --------------------------------------------------------------------------
 # Pad state machine
 # --------------------------------------------------------------------------
@@ -373,6 +553,8 @@ class Bridge(object):
 
         self._last_leds = None
         self._last_frame = None
+        self.splash = Splash() if cfg.get("splash", True) else None
+        self.splash_start = None
         self._last_display_t = 0.0
 
         self.out = None
@@ -592,6 +774,15 @@ class Bridge(object):
         return self.live_lines is not None and (now - self.last_heartbeat) < 3.0
 
     def compose_leds(self, now):
+        t = self.splashing(now)
+        if t is not None:
+            leds = [0] * LED_COUNT
+            for hw in range(16):
+                off = LED_PADS_RGB + 3 * hw
+                leds[off:off + 3] = list(self.splash.pad_rgb(t, hw))
+            if t > 2.75:
+                leds[LED_GROUP_RGB:LED_GROUP_RGB + 3] = [20, 110, 60]
+            return leds
         cfg = self.cfg
         leds = [0] * LED_COUNT
         connected = self.live_connected(now)
@@ -636,7 +827,19 @@ class Bridge(object):
             leds[off:off + 3] = list(rgb)
         return leds
 
+    def splashing(self, now):
+        if self.splash_start is None:
+            return None
+        t = now - self.splash_start
+        if t >= Splash.DURATION:
+            self.splash_start = None
+            return None
+        return t
+
     def compose_screen(self, now):
+        t = self.splashing(now)
+        if t is not None:
+            return Screen.image_to_pages(self.splash.image(t), self.screen.invert)
         if self.live_connected(now):
             self.screen.lines = list(self.live_lines)
         else:
@@ -677,6 +880,8 @@ class Bridge(object):
                 continue
             print("Maschine Mikro MK2 connected.")
             self._last_leds = self._last_frame = None
+            if self.splash is not None:
+                self.splash_start = time.time()
             self.send_hello()
             try:
                 self.loop()
@@ -720,6 +925,28 @@ def test_display(dev, cfg):
         time.sleep(1)
 
 
+def test_splash(dev, cfg):
+    """Loop the boot animation on the screen and pads."""
+    splash = Splash()
+    print("Playing the boot animation in a loop. Ctrl+C to quit.")
+    while True:
+        t0 = time.time()
+        while True:
+            t = time.time() - t0
+            if t >= Splash.DURATION + 0.6:
+                break
+            if t < Splash.DURATION:
+                dev.write_display(Screen.image_to_pages(splash.image(t), cfg["display_invert"]))
+                leds = [0] * LED_COUNT
+                for hw in range(16):
+                    leds[LED_PADS_RGB + 3 * hw:LED_PADS_RGB + 3 * hw + 3] = list(splash.pad_rgb(t, hw))
+                dev.write_leds(leds)
+            else:
+                dev.write_display(bytes(1024))
+                dev.write_leds([0] * LED_COUNT)
+            time.sleep(1.0 / 30)
+
+
 def test_leds(dev):
     names = dict((v, k) for k, v in BUTTON_LED.items())
     for off in range(LED_COUNT):
@@ -742,7 +969,7 @@ def main():
     ap = argparse.ArgumentParser(description="Mikrobe: Maschine Mikro MK2 <-> Ableton Live bridge")
     ap.add_argument("--config", default=os.path.join(here, "config.json"))
     ap.add_argument("--monitor", action="store_true", help="print hardware events, no MIDI")
-    ap.add_argument("--test", choices=["display", "leds"])
+    ap.add_argument("--test", choices=["display", "leds", "splash"])
     ap.add_argument("--list", action="store_true", help="list NI HID devices")
     ap.add_argument("--path", help="explicit HID device path")
     ap.add_argument("--version", action="version", version="%(prog)s " + __version__)
@@ -760,7 +987,8 @@ def main():
     if args.test:
         dev = MikroDevice(args.path).open()
         try:
-            test_display(dev, cfg) if args.test == "display" else test_leds(dev)
+            {"display": test_display, "leds": lambda d, c: test_leds(d),
+             "splash": test_splash}[args.test](dev, cfg)
         except KeyboardInterrupt:
             pass
         finally:
